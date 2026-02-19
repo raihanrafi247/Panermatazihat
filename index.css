@@ -1,0 +1,11 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Hind Siliguri", sans-serif;
+  --font-serif: "Noto Serif Bengali", serif;
+
+  --color-brand-red: #D32F2F;
+  --color-brand-black: #1a1a1a;
+  --color-brand-gray: #f4f4f4;
+  --color-brand-dark: #212121;
+}

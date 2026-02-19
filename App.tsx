@@ -1,7 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Header, Footer, Sidebar, BreakingNewsTicker } from './components/Layout';
 import { NewsItem, User, AppState, SiteSettings, Category } from './types';
-import { INITIAL_NEWS, MOCK_USER, MOCK_ADMIN, CATEGORIES as INITIAL_CATEGORIES, INITIAL_SETTINGS, INITIAL_USERS, uploadImageToImgBB } from './services/mockData';
+import { uploadImageToImgBB } from './services/mockData';
+import { 
+  signIn, signUp, signOut, getCurrentUser, updateProfile,
+  fetchNews, createNews, updateNews, deleteNews, 
+  fetchCategories, fetchSettings, updateSettings, fetchUsers
+} from './services/supabaseService';
 import { Eye, Clock, ThumbsUp, MessageCircle, Share2, Upload, Trash2, CheckCircle, XCircle, Settings, Save, Edit, PlusCircle, ArrowLeft, Layers, Menu, User as UserIcon, Users, X, ChevronLeft, ChevronRight, Image as ImageIcon } from 'lucide-react';
 
 // --- Helper Components ---
@@ -303,24 +308,34 @@ const AuthPage: React.FC<{ type: 'login' | 'register'; onLogin: (user: User) => 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Dummy authentication logic
-    if (type === 'login') {
-      if (email.includes('admin')) onLogin(MOCK_ADMIN);
-      else if (email.includes('sub')) onLogin(INITIAL_USERS.find(u => u.role === 'sub-admin') || MOCK_USER);
-      else onLogin(MOCK_USER);
-    } else {
-      // Register logic
-      onLogin({
-        id: 'new_' + Date.now(),
-        name: name || 'নতুন ইউজার',
-        email,
-        role: 'user',
-        avatar: 'https://picsum.photos/100/100',
-        joinedAt: new Date().toISOString()
-      });
+    setError('');
+    setLoading(true);
+    
+    try {
+      if (type === 'login') {
+        const { user } = await signIn(email, password);
+        if (user) {
+          const currentUser = await getCurrentUser();
+          if (currentUser) onLogin(currentUser);
+        }
+      } else {
+        const { user } = await signUp(email, password, name);
+        if (user) {
+          alert('Registration successful! Please check your email to verify your account.');
+          // Optionally auto-login or redirect to login
+          onSwitch(); 
+        }
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || 'Authentication failed');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -330,6 +345,7 @@ const AuthPage: React.FC<{ type: 'login' | 'register'; onLogin: (user: User) => 
         <h2 className="text-2xl font-serif font-bold mb-6 text-center text-gray-800">
           {type === 'login' ? 'লগইন করুন' : 'নিবন্ধন করুন'}
         </h2>
+        {error && <div className="bg-red-100 text-red-700 p-2 rounded mb-4 text-sm">{error}</div>}
         <form onSubmit={handleSubmit} className="space-y-4">
           {type === 'register' && (
             <div>
@@ -345,8 +361,8 @@ const AuthPage: React.FC<{ type: 'login' | 'register'; onLogin: (user: User) => 
             <label className="block text-sm font-medium text-gray-700 mb-1">পাসওয়ার্ড</label>
             <input type="password" value={password} onChange={e => setPassword(e.target.value)} required className="w-full border p-2 rounded focus:ring-1 focus:ring-brand-red outline-none" />
           </div>
-          <button type="submit" className="w-full bg-brand-red text-white py-2 rounded hover:bg-red-700 transition font-bold">
-            {type === 'login' ? 'প্রবেশ করুন' : 'অ্যাকাউন্ট তৈরি করুন'}
+          <button disabled={loading} type="submit" className="w-full bg-brand-red text-white py-2 rounded hover:bg-red-700 transition font-bold disabled:opacity-50">
+            {loading ? 'অপেক্ষা করুন...' : (type === 'login' ? 'প্রবেশ করুন' : 'অ্যাকাউন্ট তৈরি করুন')}
           </button>
         </form>
         <div className="mt-4 text-center text-sm">
@@ -1213,16 +1229,53 @@ const AdminDashboard: React.FC<{
 // --- Main App Component ---
 
 const App: React.FC = () => {
-  const [news, setNews] = useState<NewsItem[]>(INITIAL_NEWS);
-  const [categories, setCategories] = useState<Category[]>(INITIAL_CATEGORIES);
-  const [settings, setSettings] = useState<SiteSettings>(INITIAL_SETTINGS);
-  const [users, setUsers] = useState<User[]>(INITIAL_USERS);
+  const [news, setNews] = useState<NewsItem[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [settings, setSettings] = useState<SiteSettings>({
+    areaTitle: 'Loading...',
+    areaDescription: '',
+    sliderImages: []
+  });
+  const [users, setUsers] = useState<User[]>([]); // Admin only needs this really
   const [state, setState] = useState<AppState>({
     currentPage: 'home',
     selectedNewsId: null,
     selectedCategory: null,
     user: null // Start as guest
   });
+  const [loading, setLoading] = useState(true);
+
+  // Initial Data Fetch
+  useEffect(() => {
+    const initData = async () => {
+      setLoading(true);
+      try {
+        const [fetchedNews, fetchedCategories, fetchedSettings] = await Promise.all([
+          fetchNews(),
+          fetchCategories(),
+          fetchSettings()
+        ]);
+        setNews(fetchedNews);
+        setCategories(fetchedCategories);
+        setSettings(fetchedSettings);
+        
+        // Check auth
+        const user = await getCurrentUser();
+        if (user) {
+          setState(prev => ({ ...prev, user }));
+          if (user.role === 'admin' || user.role === 'sub-admin') {
+             const fetchedUsers = await fetchUsers();
+             setUsers(fetchedUsers);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to fetch initial data", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    initData();
+  }, []);
 
   // Basic Routing Handlers
   const navigate = (page: AppState['currentPage'], newsId: string | null = null) => {
@@ -1240,15 +1293,19 @@ const App: React.FC = () => {
     setState(prev => ({ ...prev, user, currentPage: dashboardPage }));
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await signOut();
     setState(prev => ({ ...prev, user: null, currentPage: 'home' }));
   };
 
-  const handleUpdateUser = (updatedUser: User) => {
-    // Update current session user
-    setState(prev => ({ ...prev, user: updatedUser }));
-    // Update in user database
-    setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
+  const handleUpdateUser = async (updatedUser: User) => {
+    try {
+      await updateProfile(updatedUser.id, updatedUser);
+      setState(prev => ({ ...prev, user: updatedUser }));
+    } catch (e) {
+      console.error(e);
+      alert('Failed to update profile');
+    }
   };
 
   const handleAdminAddUser = (newUser: User) => {
@@ -1257,77 +1314,83 @@ const App: React.FC = () => {
 
   const handleAdminEditUser = (updatedUser: User) => {
     setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
-    // If the logged-in admin updates themselves, update session
-    if (state.user && state.user.id === updatedUser.id) {
-       setState(prev => ({ ...prev, user: updatedUser }));
+  };
+
+  const handleAddNews = async (item: NewsItem) => {
+    if (!state.user) return;
+    try {
+      // Omit ID and other auto-fields
+      const { id, views, status, publishedAt, authorName, ...newsData } = item;
+      await createNews(newsData, state.user.id);
+      // Refresh news
+      const updatedNews = await fetchNews();
+      setNews(updatedNews);
+    } catch (e) {
+      console.error(e);
+      alert('Failed to create news');
     }
   };
 
-  const handleAddNews = (item: NewsItem) => {
-    setNews(prev => [item, ...prev]);
+  const handleEditNews = async (updatedItem: NewsItem) => {
+    try {
+      await updateNews(updatedItem.id, updatedItem);
+      const updatedNews = await fetchNews();
+      setNews(updatedNews);
+    } catch (e) {
+      console.error(e);
+      alert('Failed to update news');
+    }
   };
 
-  const handleEditNews = (updatedItem: NewsItem) => {
-    setNews(prev => prev.map(n => n.id === updatedItem.id ? updatedItem : n));
+  const handleStatusUpdate = async (id: string, status: NewsItem['status']) => {
+    try {
+      await updateNews(id, { status });
+      setNews(prev => prev.map(n => n.id === id ? { ...n, status } : n));
+    } catch (e) {
+      console.error(e);
+    }
   };
 
-  const handleStatusUpdate = (id: string, status: NewsItem['status']) => {
-    setNews(prev => prev.map(n => n.id === id ? { ...n, status } : n));
-  };
-
-  const handleDeleteNews = (id: string) => {
+  const handleDeleteNews = async (id: string) => {
     if (confirm('আপনি কি নিশ্চিত এই নিউজটি মুছে ফেলতে চান?')) {
-      setNews(prev => prev.filter(n => n.id !== id));
+      try {
+        await deleteNews(id);
+        setNews(prev => prev.filter(n => n.id !== id));
+      } catch (e) {
+        console.error(e);
+        alert('Failed to delete news');
+      }
     }
   };
 
-  const handleUpdateSettings = (newSettings: SiteSettings) => {
-    setSettings(newSettings);
+  const handleUpdateSettings = async (newSettings: SiteSettings) => {
+    try {
+      await updateSettings(newSettings);
+      setSettings(newSettings);
+    } catch (e) {
+      console.error(e);
+      alert('Failed to update settings');
+    }
   };
 
   const handleAddCategory = (name: string, parentId?: string) => {
-     const slug = name.toLowerCase().replace(/\s+/g, '-');
-     const newCat = { id: Date.now().toString(), name, slug };
-
-     if (parentId) {
-       // Add as sub-category
-       setCategories(prev => prev.map(cat => {
-         if (cat.id === parentId) {
-           return {
-             ...cat,
-             subCategories: [...(cat.subCategories || []), newCat]
-           };
-         }
-         return cat;
-       }));
-     } else {
-       // Add as main category
-       setCategories(prev => [...prev, newCat]);
-     }
+     // Implement Supabase category add
+     alert("Category management via Supabase not fully implemented in this demo step.");
   };
 
   const handleDeleteCategory = (id: string) => {
-     if(confirm('আপনি কি নিশ্চিত? এই ক্যাটাগরির নিউজগুলো আনক্যাটাগরাইজড হয়ে যেতে পারে।')) {
-       setCategories(prev => {
-         // Check if it's a main category
-         if (prev.some(c => c.id === id)) {
-           return prev.filter(c => c.id !== id);
-         } else {
-           // It might be a sub-category
-           return prev.map(cat => ({
-             ...cat,
-             subCategories: cat.subCategories?.filter(sub => sub.id !== id)
-           }));
-         }
-       });
-     }
+     // Implement Supabase category delete
+     alert("Category management via Supabase not fully implemented in this demo step.");
   };
 
   const handleDeleteUser = (id: string) => {
-    if (confirm('আপনি কি নিশ্চিত এই ব্যবহারকারীকে মুছে ফেলতে চান?')) {
-      setUsers(prev => prev.filter(u => u.id !== id));
-    }
+    // Implement Supabase user delete (admin only)
+    alert("User management via Supabase not fully implemented in this demo step.");
   };
+
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  }
 
   // Render Page Content based on State
   const renderContent = () => {
