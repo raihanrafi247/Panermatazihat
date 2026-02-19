@@ -24,7 +24,7 @@ export const signUp = async (email: string, password: string, name: string) => {
     },
   });
   if (error) throw error;
-  return data;
+  return data; // returns { user, session }
 };
 
 export const signOut = async () => {

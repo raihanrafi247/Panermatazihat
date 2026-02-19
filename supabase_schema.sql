@@ -148,3 +148,18 @@ insert into public.categories (name, slug) values
 ('বিনোদন', 'entertainment'),
 ('প্রযুক্তি', 'technology'),
 ('অর্থনীতি', 'economy');
+
+-- Insert Sample News
+DO $$
+DECLARE
+  admin_id uuid;
+BEGIN
+  -- Try to get an admin ID if exists, otherwise we can't link author easily without knowing a real ID.
+  -- For sample data, we might need to create a dummy user or just leave author_id null for now if allowed.
+  -- But our schema allows null author_id.
+  
+  insert into public.news (title, short_description, full_description, category_slug, image_url, status, is_breaking, published_at, tags) values
+  ('পদ্মা সেতুতে যান চলাচলের নতুন রেকর্ড', 'পদ্মা সেতু দিয়ে যান চলাচলের সব রেকর্ড ভেঙে গেছে।', 'বিস্তারিত সংবাদ...', 'bangladesh', 'https://images.unsplash.com/photo-1628172922133-722a96866164', 'approved', true, now(), ARRAY['পদ্মা সেতু', 'উন্নয়ন']),
+  ('বিশ্বকাপ ক্রিকেটে বাংলাদেশের জয়', 'শ্বাসরুদ্ধকর ম্যাচে জয় পেল টাইগাররা।', 'বিস্তারিত সংবাদ...', 'sports', 'https://images.unsplash.com/photo-1531415074968-036ba1b575da', 'approved', true, now(), ARRAY['ক্রিকেট', 'বিশ্বকাপ']),
+  ('প্রযুক্তিতে নতুন বিপ্লব', 'এআই এখন মানুষের হাতের মুঠোয়।', 'বিস্তারিত সংবাদ...', 'technology', 'https://images.unsplash.com/photo-1485827404703-89b55fcc595e', 'approved', false, now(), ARRAY['AI', 'Tech']);
+END $$;

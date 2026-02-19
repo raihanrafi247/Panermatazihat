@@ -311,9 +311,29 @@ const AuthPage: React.FC<{ type: 'login' | 'register'; onLogin: (user: User) => 
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const validateEmail = (email: string) => {
+    return String(email)
+      .toLowerCase()
+      .match(
+        /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/
+      );
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    // Client-side validation
+    if (!validateEmail(email)) {
+      setError('অনুগ্রহ করে সঠিক ইমেইল ঠিকানা দিন।');
+      return;
+    }
+
+    if (password.length < 6) {
+      setError('পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে।');
+      return;
+    }
+
     setLoading(true);
     
     try {
@@ -321,19 +341,39 @@ const AuthPage: React.FC<{ type: 'login' | 'register'; onLogin: (user: User) => 
         const { user } = await signIn(email, password);
         if (user) {
           const currentUser = await getCurrentUser();
-          if (currentUser) onLogin(currentUser);
+          if (currentUser) {
+             onLogin(currentUser);
+          } else {
+             // Fallback if profile not created properly
+             setError('প্রোফাইল লোড করতে সমস্যা হয়েছে।');
+          }
         }
       } else {
-        const { user } = await signUp(email, password, name);
+        const { user, session } = await signUp(email, password, name);
         if (user) {
-          alert('Registration successful! Please check your email to verify your account.');
-          // Optionally auto-login or redirect to login
-          onSwitch(); 
+          if (session) {
+             // Auto login if session exists (email confirmation disabled)
+             alert('নিবন্ধন সফল হয়েছে!');
+             onLogin(await getCurrentUser() as User);
+          } else {
+             // Email confirmation required
+             alert('নিবন্ধন সফল হয়েছে! অনুগ্রহ করে আপনার ইমেইল চেক করুন এবং অ্যাকাউন্ট ভেরিফাই করুন।');
+             onSwitch(); 
+          }
         }
       }
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'Authentication failed');
+      let msg = err.message || 'অথেন্টিকেশন ব্যর্থ হয়েছে';
+      
+      // Translate common Supabase errors
+      if (msg.includes('Invalid login credentials')) msg = 'ইমেইল বা পাসওয়ার্ড ভুল।';
+      if (msg.includes('Password should be at least 6 characters')) msg = 'পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে।';
+      if (msg.includes('Email address') && msg.includes('is invalid')) msg = 'ইমেইল ঠিকানাটি সঠিক নয়।';
+      if (msg.includes('email rate limit exceeded')) msg = 'অনেকবার চেষ্টা করা হয়েছে। কিছুক্ষণ পর আবার চেষ্টা করুন।';
+      if (msg.includes('User already registered')) msg = 'এই ইমেইল দিয়ে ইতিমধ্যে অ্যাকাউন্ট খোলা আছে।';
+
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -345,7 +385,7 @@ const AuthPage: React.FC<{ type: 'login' | 'register'; onLogin: (user: User) => 
         <h2 className="text-2xl font-serif font-bold mb-6 text-center text-gray-800">
           {type === 'login' ? 'লগইন করুন' : 'নিবন্ধন করুন'}
         </h2>
-        {error && <div className="bg-red-100 text-red-700 p-2 rounded mb-4 text-sm">{error}</div>}
+        {error && <div className="bg-red-100 text-red-700 p-2 rounded mb-4 text-sm font-sans">{error}</div>}
         <form onSubmit={handleSubmit} className="space-y-4">
           {type === 'register' && (
             <div>
@@ -360,6 +400,7 @@ const AuthPage: React.FC<{ type: 'login' | 'register'; onLogin: (user: User) => 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">পাসওয়ার্ড</label>
             <input type="password" value={password} onChange={e => setPassword(e.target.value)} required className="w-full border p-2 rounded focus:ring-1 focus:ring-brand-red outline-none" />
+            {type === 'register' && <p className="text-xs text-gray-500 mt-1">কমপক্ষে ৬ অক্ষর</p>}
           </div>
           <button disabled={loading} type="submit" className="w-full bg-brand-red text-white py-2 rounded hover:bg-red-700 transition font-bold disabled:opacity-50">
             {loading ? 'অপেক্ষা করুন...' : (type === 'login' ? 'প্রবেশ করুন' : 'অ্যাকাউন্ট তৈরি করুন')}
@@ -367,7 +408,7 @@ const AuthPage: React.FC<{ type: 'login' | 'register'; onLogin: (user: User) => 
         </form>
         <div className="mt-4 text-center text-sm">
           {type === 'login' ? 'অ্যাকাউন্ট নেই? ' : 'ইতিমধ্যে অ্যাকাউন্ট আছে? '}
-          <button onClick={onSwitch} className="text-blue-600 hover:underline">
+          <button onClick={() => { setError(''); onSwitch(); }} className="text-blue-600 hover:underline">
             {type === 'login' ? 'নিবন্ধন করুন' : 'লগইন করুন'}
           </button>
         </div>
